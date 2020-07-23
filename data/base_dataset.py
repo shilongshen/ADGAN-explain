@@ -14,6 +14,7 @@ class BaseDataset(data.Dataset):
 
 def get_transform(opt):
     transform_list = []
+    #resize_or_crop=no,不进行旋转等处理
     if opt.resize_or_crop == 'resize_and_crop':
         osize = [opt.loadSize, opt.loadSize]
         transform_list.append(transforms.Scale(osize, Image.BICUBIC))
@@ -28,6 +29,8 @@ def get_transform(opt):
             lambda img: __scale_width(img, opt.loadSize)))
         transform_list.append(transforms.RandomCrop(opt.fineSize))
 
+    # 将numpy转换为tensor，并进行归一化
+    # ToTensor()能够把灰度范围从0-255变换到0-1之间，而后面的transform.Normalize()则把0-1变换到#(-1,1)
     transform_list += [transforms.ToTensor(),
                        transforms.Normalize((0.5, 0.5, 0.5),
                                             (0.5, 0.5, 0.5))]

@@ -21,19 +21,21 @@ class TransferModel(BaseModel):
     def initialize(self, opt):
         BaseModel.initialize(self, opt)
 
-        nb = opt.batchSize
-        size = opt.fineSize
-        self.input_P1_set = self.Tensor(nb, opt.P_input_nc, size, size)
-        self.input_BP1_set = self.Tensor(nb, opt.BP_input_nc, size, size)
-        self.input_P2_set = self.Tensor(nb, opt.P_input_nc, size, size)
-        self.input_BP2_set = self.Tensor(nb, opt.BP_input_nc, size, size)
-        self.input_SP1_set = self.Tensor(nb, opt.SP_input_nc, size, size)
+        nb = opt.batchSize#6
+        size = opt.fineSize#256
+        self.input_P1_set = self.Tensor(nb, opt.P_input_nc, size, size)#(6,3,256,256),图像
+        self.input_BP1_set = self.Tensor(nb, opt.BP_input_nc, size, size)#(6,18,256,256)，骨骼点
+        self.input_P2_set = self.Tensor(nb, opt.P_input_nc, size, size)##(6,3,256,256)
+        self.input_BP2_set = self.Tensor(nb, opt.BP_input_nc, size, size)#(6,18,256,256)
+        self.input_SP1_set = self.Tensor(nb, opt.SP_input_nc, size, size)##(6,8,256,256)#语义图
 
-        input_nc = [opt.P_input_nc, opt.BP_input_nc+opt.BP_input_nc]
+        input_nc = [opt.P_input_nc, opt.BP_input_nc+opt.BP_input_nc]#[3,18+18]
         self.netG = networks.define_G(input_nc, opt.P_input_nc,
                                         opt.ngf, opt.which_model_netG, opt.norm, not opt.no_dropout, opt.init_type, self.gpu_ids,
                                         n_downsampling=opt.G_n_downsampling)
-
+        # define_G([3,36], 3,
+        #            64, opt.which_model_netG, instance, not opt.no_dropout, opt.init_type, self.gpu_ids,
+        #             n_downsampling=2)
 
         if self.isTrain:
             use_sigmoid = opt.no_lsgan
@@ -149,7 +151,7 @@ class TransferModel(BaseModel):
 
         self.input_SP1 = Variable(self.input_SP1_set)
 
-        self.fake_p2 = self.netG(self.input_BP2, self.input_P1, self.input_SP1)
+        self.fake_p2 = self.netG(self.input_BP2, self.input_P1, self.input_SP1)#输入为目标骨架，原图像，原图像的语义分割图
 
 
 

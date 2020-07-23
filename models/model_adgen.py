@@ -15,27 +15,31 @@ class ADGen(nn.Module):
         super(ADGen, self).__init__()
 
         # style encoder
-        input_dim = 3
-        SP_input_nc = 8
+        input_dim = 3#输入为原图像
+        SP_input_nc = 8#输入为语义分割图
+        # VggStyleEncoder(3, input_dim=3, dim=64, int(style_dim/SP_input_nc)=512/8, norm='none', activ=relu, pad_type=reflect)
         self.enc_style = VggStyleEncoder(3, input_dim, dim, int(style_dim/SP_input_nc), norm='none', activ=activ, pad_type=pad_type)
 
         # content encoder
-        input_dim = 18
+        input_dim = 18#输入为骨骼点
+        #ContentEncoder(n_downsample=2, n_res=8, input_dim=18, dim=64, norn='in', activ=relu, pad_type=reflect)
         self.enc_content = ContentEncoder(n_downsample, n_res, input_dim, dim, 'in', activ, pad_type=pad_type)
         input_dim = 3
+        # res_norm='adain'
         self.dec = Decoder(n_downsample, n_res, self.enc_content.output_dim, input_dim, res_norm='adain', activ=activ, pad_type=pad_type)
 
         self.fc = LinearBlock(style_dim, style_dim, norm='none', activation=activ)
 
         # fusion module
+        # MLP(style_dim=512, self.get_num_adain_params(self.dec)=512, mlp_dim=256, 3, norm='none', activ=activ)
         self.mlp = MLP(style_dim, self.get_num_adain_params(self.dec), mlp_dim, 3, norm='none', activ=activ)
 
     def forward(self, img_A, img_B, sem_B):
         # reconstruct an image
 
-        content = self.enc_content(img_A)
-        style = self.enc_style(img_B, sem_B)
-        style = self.fc(style.view(style.size(0), -1))
+        content = self.enc_content(img_A)#256
+        style = self.enc_style(img_B, sem_B)#(6,1,1,512)
+        style = self.fc(style.view(style.size(0), -1))#style.view(style.size(0), -1):(6,1,1,512)->(6,1,512);fc:(6,1,512)->(6,1,512)
         style = torch.unsqueeze(style, 2)
         style = torch.unsqueeze(style, 3)
 
@@ -44,7 +48,7 @@ class ADGen(nn.Module):
 
     def decode(self, content, style):
         # decode content and style codes to an image
-        adain_params = self.mlp(style)
+        adain_params = self.mlp(style)#(1,512)
 
         self.assign_adain_params(adain_params, self.dec)
         images = self.dec(content)
@@ -63,10 +67,11 @@ class ADGen(nn.Module):
 
     def get_num_adain_params(self, model):
         # return the number of AdaIN parameters needed by the model
+        #8个style block，共16个AdaIN模块，需要32个参数
         num_adain_params = 0
-        for m in model.modules():
+        for m in model.modules():#读取decoder中的每一个组成部分
             if m.__class__.__name__ == "AdaptiveInstanceNorm2d":
-                num_adain_params += 2*m.num_features
+                num_adain_params += 2*m.num_features#num_features表示content feature的通道数，一个通道需要两个参数
         return num_adain_params
 
 
@@ -74,29 +79,30 @@ class VggStyleEncoder(nn.Module):
     def __init__(self, n_downsample, input_dim, dim, style_dim, norm, activ, pad_type):
         super(VggStyleEncoder, self).__init__()
         # self.vgg = models.vgg19(pretrained=True).features
+        # VggStyleEncoder(3, input_dim=3, dim=64, int(style_dim/SP_input_nc)=512/8, norm='none', activ=relu, pad_type=reflect)
         vgg19 = models.vgg19(pretrained=False)
-        vgg19.load_state_dict(torch.load('/home1/menyf/data/deepfashion/vgg19-dcbb9e9d.pth'))
+        vgg19.load_state_dict(torch.load('/home/ssl/PycharmProjects/ADGAN/data/deepfashion/vgg19-dcbb9e9d.pth'))
         self.vgg = vgg19.features
 
         for param in self.vgg.parameters():
             param.requires_grad_(False)
 
-        self.conv1 = Conv2dBlock(input_dim, dim, 7, 1, 3, norm=norm, activation=activ, pad_type=pad_type) # 3->64,concat
+        self.conv1 = Conv2dBlock(input_dim, dim, 7, 1, 3, norm=norm, activation=activ, pad_type=pad_type) # 3->64,concat,维度不变
         dim = dim*2
-        self.conv2 = Conv2dBlock(dim , dim, 4, 2, 1, norm=norm, activation=activ, pad_type=pad_type) # 128->128
+        self.conv2 = Conv2dBlock(dim , dim, 4, 2, 1, norm=norm, activation=activ, pad_type=pad_type) # 128->128，维度减半
         dim = dim*2
-        self.conv3 = Conv2dBlock(dim , dim, 4, 2, 1, norm=norm, activation=activ, pad_type=pad_type) # 256->256
+        self.conv3 = Conv2dBlock(dim , dim, 4, 2, 1, norm=norm, activation=activ, pad_type=pad_type) # 256->256，维度减半
         dim = dim * 2
-        self.conv4 = Conv2dBlock(dim, dim, 4, 2, 1, norm=norm, activation=activ, pad_type=pad_type)  # 512->512
-        dim = dim * 2
+        self.conv4 = Conv2dBlock(dim, dim, 4, 2, 1, norm=norm, activation=activ, pad_type=pad_type)  # 512->512，维度减半
+        dim = dim * 2#512
 
         self.model = []
         self.model += [nn.AdaptiveAvgPool2d(1)] # global average pooling
         self.model += [nn.Conv2d(dim, style_dim, 1, 1, 0)]
-        self.model = nn.Sequential(*self.model)
+        self.model = nn.Sequential(*self.model)#(1024,64,1,1)
         self.output_dim = dim
 
-    def get_features(self,image, model, layers=None):
+    def get_features(self,image, model, layers=None):#这是提取VGG19对应特征层的特征
         if layers is None:
             layers = {'0': 'conv1_1', '5': 'conv2_1', '10': 'conv3_1', '19': 'conv4_1'}
         features = {}
@@ -109,37 +115,41 @@ class VggStyleEncoder(nn.Module):
         return features
 
     def texture_enc(self, x):
-        sty_fea = self.get_features(x, self.vgg)
-        x = self.conv1(x)
-        x = torch.cat([x, sty_fea['conv1_1']], dim=1)
-        x = self.conv2(x)
-        x = torch.cat([x, sty_fea['conv2_1']], dim=1)
-        x = self.conv3(x)
-        x = torch.cat([x, sty_fea['conv3_1']], dim=1)
-        x = self.conv4(x)
-        x = torch.cat([x, sty_fea['conv4_1']], dim=1)
-        x = self.model(x)
+        sty_fea = self.get_features(x, self.vgg)#这是通过预训练的VGG19提取的特征
+        x = self.conv1(x)#3->64,维度不变
+        x = torch.cat([x, sty_fea['conv1_1']], dim=1)#在通道方向叠加，64+64=128
+        x = self.conv2(x)#128->128,维度减半
+        x = torch.cat([x, sty_fea['conv2_1']], dim=1)#128+128=256
+        x = self.conv3(x)#256->256,维度减半
+        x = torch.cat([x, sty_fea['conv3_1']], dim=1)#256+256=512
+        x = self.conv4(x)#512->512,维度减半
+        x = torch.cat([x, sty_fea['conv4_1']], dim=1)#512+512=1024
+        x = self.model(x)#style code,(64,1,1)
         return x
 
     def forward(self, x, sem):
-
+        # x为原图像，
+        # sem为原图像对应的语义图,维度为(6,8,256,256)
         for i in range(sem.size(1)):
-            semi = sem[:, i, :, :]
-            semi = torch.unsqueeze(semi, 1)
+            semi = sem[:, i, :, :]#取各个通道,此时的维度为(6,256,256)
+            semi = torch.unsqueeze(semi, 1)#加上维度为1的维度,此时的维度为(6,1,256,256)
             semi = semi.repeat(1, x.size(1), 1, 1)
-            xi = x.mul(semi)
+            xi = x.mul(semi)#xi表示不同的身体属性，x表示原图像，semi表示不同的身体属性的mask,一共有8个
             if i is 0:
                 out = self.texture_enc(xi)
             else:
-                out = torch.cat([out, self.texture_enc(xi)], dim=1)
+                out = torch.cat([out, self.texture_enc(xi)], dim=1)#将各个身体属性的style叠加在一起,(6,64*8=512,1,1)
 
         return out
 
 
 class ContentEncoder(nn.Module):
+    #ContentEncoder(n_downsample=2, n_res=8, input_dim=18, dim=64, norn='in', activ=relu, pad_type=reflect)
     def __init__(self, n_downsample, n_res, input_dim, dim, norm, activ, pad_type):
         super(ContentEncoder, self).__init__()
         self.model = []
+        #输入为（18,176,256）
+        #Conv2dBlock(input_dim=18, dim=64, 7, 1, 3, norm=in, activation=relu, pad_type=reflect)
         self.model += [Conv2dBlock(input_dim, dim, 7, 1, 3, norm=norm, activation=activ, pad_type=pad_type)]
         # downsampling blocks
         for i in range(n_downsample):
@@ -148,7 +158,7 @@ class ContentEncoder(nn.Module):
         # residual blocks
         self.model += [ResBlocks(n_res, dim, norm=norm, activation=activ, pad_type=pad_type)]
         self.model = nn.Sequential(*self.model)
-        self.output_dim = dim
+        self.output_dim = dim#64*2*2
 
     def forward(self, x):
         return self.model(x)
@@ -158,9 +168,10 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
 
         self.model = []
-        # AdaIN residual blocks
+        # AdaIN residual blocks=8
+        # res_norm='adain'
         self.model += [ResBlocks(n_res, dim, res_norm, activ, pad_type=pad_type)]
-        # upsampling blocks
+        # upsampling blocks=2
         for i in range(n_upsample):
             self.model += [nn.Upsample(scale_factor=2),
                            Conv2dBlock(dim, dim // 2, 5, 1, 2, norm='ln', activation=activ, pad_type=pad_type)]
@@ -181,7 +192,7 @@ class ResBlocks(nn.Module):
     def __init__(self, num_blocks, dim, norm='in', activation='relu', pad_type='zero'):
         super(ResBlocks, self).__init__()
         self.model = []
-        for i in range(num_blocks):
+        for i in range(num_blocks):#num_blocks=8
             self.model += [ResBlock(dim, norm=norm, activation=activation, pad_type=pad_type)]
         self.model = nn.Sequential(*self.model)
 
@@ -190,7 +201,7 @@ class ResBlocks(nn.Module):
 
 class MLP(nn.Module):
     def __init__(self, input_dim, output_dim, dim, n_blk, norm='none', activ='relu'):
-
+        # # MLP(style_dim=512, self.get_num_adain_params(self.dec)=512, mlp_dim=256, 3, norm='none', activ=activ)
         super(MLP, self).__init__()
         self.model = []
         self.model += [LinearBlock(input_dim, dim, norm=norm, activation=activ)]
@@ -198,7 +209,7 @@ class MLP(nn.Module):
             self.model += [LinearBlock(dim, dim, norm=norm, activation=activ)]
         self.model += [LinearBlock(dim, output_dim, norm='none', activation='none')] # no output activations
         self.model = nn.Sequential(*self.model)
-
+    # 512->256->256->512
     def forward(self, x):
         return self.model(x.view(x.size(0), -1))
 
@@ -225,12 +236,13 @@ class Conv2dBlock(nn.Module):
                  padding=0, norm='none', activation='relu', pad_type='zero'):
         super(Conv2dBlock, self).__init__()
         self.use_bias = True
+        # Conv2dBlock(input_dim=18, dim=64, 7, 1, 3, norm=in, activation=relu, pad_type=reflect)#content_enc时的设置
         # initialize padding
-        if pad_type == 'reflect':
+        if pad_type == 'reflect':#进行填充
             self.pad = nn.ReflectionPad2d(padding)
         elif pad_type == 'replicate':
             self.pad = nn.ReplicationPad2d(padding)
-        elif pad_type == 'zero':
+        elif pad_type == 'zero':#
             self.pad = nn.ZeroPad2d(padding)
         else:
             assert 0, "Unsupported padding type: {}".format(pad_type)
@@ -239,12 +251,12 @@ class Conv2dBlock(nn.Module):
         norm_dim = output_dim
         if norm == 'bn':
             self.norm = nn.BatchNorm2d(norm_dim)
-        elif norm == 'in':
+        elif norm == 'in':#使用in,content_enc时的设置
             #self.norm = nn.InstanceNorm2d(norm_dim, track_running_stats=True)
             self.norm = nn.InstanceNorm2d(norm_dim)
         elif norm == 'ln':
             self.norm = LayerNorm(norm_dim)
-        elif norm == 'adain':
+        elif norm == 'adain':#decoder时的norm方式
             self.norm = AdaptiveInstanceNorm2d(norm_dim)
         elif norm == 'none' or norm == 'sn':
             self.norm = None
@@ -252,7 +264,7 @@ class Conv2dBlock(nn.Module):
             assert 0, "Unsupported normalization: {}".format(norm)
 
         # initialize activation
-        if activation == 'relu':
+        if activation == 'relu':#使用relu激活
             self.activation = nn.ReLU(inplace=True)
         elif activation == 'lrelu':
             self.activation = nn.LeakyReLU(0.2, inplace=True)
@@ -270,6 +282,8 @@ class Conv2dBlock(nn.Module):
         # initialize convolution
         if norm == 'sn':
             self.conv = SpectralNorm(nn.Conv2d(input_dim, output_dim, kernel_size, stride, bias=self.use_bias))
+
+        #
         else:
             self.conv = nn.Conv2d(input_dim, output_dim, kernel_size, stride, bias=self.use_bias)
 
@@ -336,7 +350,7 @@ class LinearBlock(nn.Module):
 class AdaptiveInstanceNorm2d(nn.Module):
     def __init__(self, num_features, eps=1e-5, momentum=0.1):
         super(AdaptiveInstanceNorm2d, self).__init__()
-        self.num_features = num_features
+        self.num_features = num_features#64*2*2
         self.eps = eps
         self.momentum = momentum
         # weight and bias are dynamically assigned

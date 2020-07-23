@@ -14,19 +14,24 @@ class KeyDataset(BaseDataset):
     def initialize(self, opt):
         self.opt = opt
         self.root = opt.dataroot
+        #这是确定数据的存放地址
+        #os.path.join,文件索引地址进行拼接,dir_P=/home1/menyf/data/deepfashion/fashion_resize/train
         self.dir_P = os.path.join(opt.dataroot, opt.phase) #person images
         self.dir_K = os.path.join(opt.dataroot, opt.phase + 'K') #keypoints
         self.dir_SP = opt.dirSem #semantic
-        self.SP_input_nc = opt.SP_input_nc
+        self.SP_input_nc = opt.SP_input_nc#input image channels=8
 
         self.init_categories(opt.pairLst)
         self.transform = get_transform(opt)
 
     def init_categories(self, pairLst):
+        # pairLst=/home1/menyf/data/deepfashion/fashion-resize-pairs-train.csv
+        #是存放训练数据的索引的
         pairs_file_train = pd.read_csv(pairLst)
         self.size = len(pairs_file_train)
         self.pairs = []
         print('Loading data pairs ...')
+        #取训练数据的索引
         for i in range(self.size):
             pair = [pairs_file_train.iloc[i]['from'], pairs_file_train.iloc[i]['to']]
             self.pairs.append(pair)
@@ -37,8 +42,8 @@ class KeyDataset(BaseDataset):
         if self.opt.phase == 'train':
             index = random.randint(0, self.size-1)
 
-        P1_name, P2_name = self.pairs[index]
-        P1_path = os.path.join(self.dir_P, P1_name) # person 1
+        P1_name, P2_name = self.pairs[index]#训练数据对的索引
+        P1_path = os.path.join(self.dir_P, P1_name) # person 1#确定训练数据的路径
         BP1_path = os.path.join(self.dir_K, P1_name + '.npy') # bone of person 1
 
         # person 2 and its bone
@@ -46,12 +51,13 @@ class KeyDataset(BaseDataset):
         BP2_path = os.path.join(self.dir_K, P2_name + '.npy') # bone of person 2
 
 
-        P1_img = Image.open(P1_path).convert('RGB')
-        P2_img = Image.open(P2_path).convert('RGB')
+        P1_img = Image.open(P1_path).convert('RGB')#提取训练数据，I_s
+        P2_img = Image.open(P2_path).convert('RGB')#提取训练数据，I_t
 
-        BP1_img = np.load(BP1_path) # h, w, c
-        BP2_img = np.load(BP2_path) 
-        # use flip
+        BP1_img = np.load(BP1_path) # h, w, c##提取训练数据，p_s
+        BP2_img = np.load(BP2_path) ##提取训练数据，p_t
+
+        # use flip#不使用翻转
         if self.opt.phase == 'train' and self.opt.use_flip:
             # print ('use_flip ...')
             flip_random = random.uniform(0,1)
@@ -75,6 +81,7 @@ class KeyDataset(BaseDataset):
             P1 = self.transform(P1_img)
             P2 = self.transform(P2_img)
 
+        #不使用翻转，实际操作为这个
         else:
             BP1 = torch.from_numpy(BP1_img).float() #h, w, c
             BP1 = BP1.transpose(2, 0) #c,w,h
@@ -88,11 +95,11 @@ class KeyDataset(BaseDataset):
             P2 = self.transform(P2_img)
 
         # segmentation
-        SP1_name = self.split_name(P1_name, 'semantic_merge3')
-        SP1_path = os.path.join(self.dir_SP, SP1_name)
+        SP1_name = self.split_name(P1_name, 'semantic_merge3')#找到对应语义分割图的地址
+        SP1_path = os.path.join(self.dir_SP, SP1_name)#绝对路径
         SP1_path = SP1_path[:-4] + '.npy'
         SP1_data = np.load(SP1_path)
-        SP1 = np.zeros((self.SP_input_nc, 256, 176), dtype='float32')
+        SP1 = np.zeros((self.SP_input_nc, 256, 176), dtype='float32')#SP_input_nc=8,对应8个身体属性
         for id in range(self.SP_input_nc):
             SP1[id] = (SP1_data == id).astype('float32')
 
@@ -128,5 +135,5 @@ class KeyDataset(BaseDataset):
         head = ''
         for path in list:
             head = os.path.join(head, path)
-        return head
+        return head#
 

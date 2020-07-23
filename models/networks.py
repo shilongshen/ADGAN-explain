@@ -31,6 +31,7 @@ def weights_init_ada(init_type='gaussian'):
                 assert 0, "Unsupported initialization: {}".format(init_type)
             if hasattr(m, 'bias') and m.bias is not None:
                 init.constant_(m.bias.data, 0.0)
+
     return init_fun
 
 
@@ -127,6 +128,7 @@ def get_scheduler(optimizer, opt):
 
 def define_G(input_nc, output_nc, ngf, which_model_netG, norm='batch', use_dropout=False, init_type='normal',
              gpu_ids=[], n_downsampling=2):
+    #gpu_ids=[]列表，计算列表的长度
     netG = None
     use_gpu = len(gpu_ids) > 0
     norm_layer = get_norm_layer(norm_type=norm)
@@ -134,27 +136,34 @@ def define_G(input_nc, output_nc, ngf, which_model_netG, norm='batch', use_dropo
     if use_gpu:
         assert (torch.cuda.is_available())
 
-    if which_model_netG == 'PATN':
-        assert len(input_nc) == 2
-        netG = PATNetwork(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout,
-                                           n_blocks=9, gpu_ids=gpu_ids, n_downsampling=n_downsampling)
-    elif which_model_netG == 'AdaGen':
-        style_dim = 512
-        n_res =8
-        mlp_dim = 256
-        netG = AdaINGen(input_nc, ngf, style_dim, n_downsampling, n_res, mlp_dim)
-    elif which_model_netG == 'ADGen':
-        style_dim = 512
-        n_res =8
-        mlp_dim = 256
+    # if which_model_netG == 'PATN':
+    #     assert len(input_nc) == 2
+    #     netG = PATNetwork(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout,
+    #                                        n_blocks=9, gpu_ids=gpu_ids, n_downsampling=n_downsampling)
+    #
+    # elif which_model_netG == 'AdaGen':
+    #     style_dim = 512
+    #     n_res =8
+    #     mlp_dim = 256
+    #     netG = AdaINGen(input_nc, ngf, style_dim, n_downsampling, n_res, mlp_dim)
+
+    ##which_model_netG ADGen,生成器用这个
+    # elif which_model_netG == 'ADGen':
+    if which_model_netG == 'ADGen':
+        style_dim = 512#style为512维
+        n_res = 8#8个AdaIN模块
+        mlp_dim = 256#
         netG = ADGen(input_nc, ngf, style_dim, n_downsampling, n_res, mlp_dim)
-    elif which_model_netG == 'AdaGen_SS_mix':
-        style_dim = 512
-        n_res = 8
-        mlp_dim = 256
-        netG = AdaINGen_SS_mix(input_nc, ngf, style_dim, n_downsampling, n_res, mlp_dim)
+
+    # elif which_model_netG == 'AdaGen_SS_mix':
+    #     style_dim = 512
+    #     n_res = 8
+    #     mlp_dim = 256
+    #     netG = AdaINGen_SS_mix(input_nc, ngf, style_dim, n_downsampling, n_res, mlp_dim)
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % which_model_netG)
+
+
     if len(gpu_ids) > 1:
         netG = torch.nn.DataParallel(netG, device_ids=gpu_ids)
     netG.cuda()
@@ -238,6 +247,7 @@ class GANLoss(nn.Module):
         target_tensor = self.get_target_tensor(input, target_is_real)
         return self.loss(input, target_tensor)
 
+
 # Define a resnet block
 class ResnetBlock(nn.Module):
     def __init__(self, dim, padding_type, norm_layer, use_dropout, use_bias):
@@ -279,6 +289,7 @@ class ResnetBlock(nn.Module):
     def forward(self, x):
         out = x + self.conv_block(x)
         return out
+
 
 class ResnetDiscriminator(nn.Module):
     def __init__(self, input_nc, ngf=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, gpu_ids=[],
@@ -342,4 +353,3 @@ class ResnetDiscriminator(nn.Module):
             return nn.parallel.data_parallel(self.model, input, self.gpu_ids)
         else:
             return self.model(input)
-

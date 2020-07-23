@@ -5,12 +5,12 @@ from data.base_data_loader import BaseDataLoader
 def CreateDataset(opt):
     dataset = None
     
-    if opt.dataset_mode == 'keypoint':
+    if opt.dataset_mode == 'keypoint':#选这个，dataset = KeyDataset()
         from data.keypoint import KeyDataset
-        dataset = KeyDataset()
-    elif opt.dataset_mode == 'keypoint_mix':
-        from data.keypoint_mix import KeyDataset
-        dataset = KeyDataset()
+        dataset = KeyDataset()#返回 #P1，BP1,SP1,P2,BP2,P1_name,P2_name
+    # elif opt.dataset_mode == 'keypoint_mix':
+    #     from data.keypoint_mix import KeyDataset
+    #     dataset = KeyDataset()
     else:
         raise ValueError("Dataset [%s] not recognized." % opt.dataset_mode)
 
@@ -28,7 +28,7 @@ class CustomDatasetDataLoader(BaseDataLoader):
         self.dataset = CreateDataset(opt)
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
-            batch_size=opt.batchSize,
+            batch_size=opt.batchSize,#6
             shuffle=not opt.serial_batches,
             num_workers=int(opt.nThreads))
 
